@@ -2,8 +2,9 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 from pandas.plotting import parallel_coordinates
+import os
 
-def plot_boundary_fidelity(df_results):
+def plot_boundary_fidelity(df_results, output_path=None):
     """
     df_results: 包含列 ['JudgeRank', 'PredictedScoreRank', 'EliminatedStatus']
     """
@@ -18,7 +19,18 @@ def plot_boundary_fidelity(df_results):
     plt.title("Figure 2: Multi-layer Rank Consistency & Elimination Fidelity", fontsize=12)
     plt.ylabel("Rank Order (1st is Top)")
     plt.grid(axis='y', linestyle='--', alpha=0.5)
-    
-    # 图注 (Caption): 
-    # 平行坐标图验证了逻辑自洽性。深紫色连线代表实际淘汰选手。
-    # 路径显示该选手在“综合预测排名”轴上始终处于底部区域，证明模型预测与真实淘汰结果完全吻合。
+    charts_dir = r"d:\MCM_2026_O\charts"
+    if output_path is None:
+        output_path = os.path.join(charts_dir, "boundary_fidelity.png")
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    plt.savefig(output_path, bbox_inches="tight")
+    plt.close()
+
+if __name__ == "__main__":
+    data = {
+        "JudgeRank": [1, 2, 3],
+        "PredictedScoreRank": [1, 3, 2],
+        "EliminatedStatus": ["Winner", "Eliminated", "Safe"],
+    }
+    df_example = pd.DataFrame(data)
+    plot_boundary_fidelity(df_example)

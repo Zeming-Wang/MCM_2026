@@ -1,7 +1,9 @@
 #逻辑： 直接回应题目要求的“确定性衡量”，展示各变量对结果波动的贡献。#
 import matplotlib.pyplot as plt  # 用于绘图，对应plt
 import numpy as np               # 用于数值计算，对应np
-def plot_sensitivity_tornado():
+import os
+
+def plot_sensitivity_tornado(output_path=None):
     features = ['行业影响力', '年龄因子', '历史粉丝量', '评委评分偏离度']
     sobol_indices = [0.45, 0.12, 0.33, 0.08]
     uncertainty = [0.05, 0.02, 0.04, 0.01] # MCMC 后验宽度
@@ -24,4 +26,12 @@ def plot_sensitivity_tornado():
         ax.text(v + 0.01, i, f'{v:.2f}', color='black', va='center')
 
     plt.grid(axis='x', linestyle='--', alpha=0.7)
-    plt.show()
+    charts_dir = r"d:\MCM_2026_O\charts"
+    if output_path is None:
+        output_path = os.path.join(charts_dir, "tornado_chart.png")
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    fig.savefig(output_path, bbox_inches="tight")
+    plt.close(fig)
+
+if __name__ == "__main__":
+    plot_sensitivity_tornado()

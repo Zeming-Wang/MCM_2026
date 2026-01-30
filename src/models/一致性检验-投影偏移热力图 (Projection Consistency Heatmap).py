@@ -1,8 +1,9 @@
 #目的： 验证贝叶斯残差项是否在物理约束的可接受范围内，量化投影算子P对原始预测的校正强度 。#
 import seaborn as sns
 import matplotlib.pyplot as plt
+import os
 
-def plot_projection_consistency(v_raw_list, v_projected_list):
+def plot_projection_consistency(v_raw_list, v_projected_list, output_path=None):
     """
     v_raw_list: 融合但未投影的得分向量 (v_base + alpha * Delta_V)
     v_projected_list: 投影到单纯形后的最终得分 (V_final)
@@ -24,7 +25,17 @@ def plot_projection_consistency(v_raw_list, v_projected_list):
     ax.set_ylabel("Final Projected Probability ($V_{final}$)", fontsize=10)
     ax.legend()
     plt.tight_layout()
-    plt.show()
+    charts_dir = r"d:\MCM_2026_O\charts"
+    if output_path is None:
+        output_path = os.path.join(charts_dir, "projection_consistency_heatmap.png")
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    fig.savefig(output_path, bbox_inches="tight")
+    plt.close(fig)
+
+if __name__ == "__main__":
+    sample_v_raw = [0.1, 0.2, 0.3, 0.4, 0.5]
+    sample_v_proj = [0.12, 0.21, 0.29, 0.39, 0.49]
+    plot_projection_consistency(sample_v_raw, sample_v_proj)
 
 # 图注 (Caption): 
 # 该图展示了贝叶斯残差融合结果与物理约束空间的一致性。散点聚集在 y=x 近邻说明

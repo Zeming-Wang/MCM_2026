@@ -1,8 +1,9 @@
 #逻辑： 用于向评审展示特征如何流向残差校准项 V。#
 import matplotlib.pyplot as plt
 import networkx as nx
+import os
 
-def plot_bayesian_network():
+def plot_bayesian_network(output_path=None):
     plt.figure(figsize=(10, 6), dpi=120)
     G = nx.DiGraph()
     
@@ -37,6 +38,12 @@ def plot_bayesian_network():
     plt.title("贝叶斯网络残差生成机制 (Bayesian Residual Architecture)", fontsize=14, pad=20)
     plt.axis('off')
     plt.tight_layout()
-    plt.show()
+    charts_dir = r"d:\MCM_2026_O\charts"
+    if output_path is None:
+        output_path = os.path.join(charts_dir, "bayesian_network_dag.png")
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    plt.savefig(output_path, bbox_inches="tight")
+    plt.close()
 
-# plot_bayesian_network()
+if __name__ == "__main__":
+    plot_bayesian_network()

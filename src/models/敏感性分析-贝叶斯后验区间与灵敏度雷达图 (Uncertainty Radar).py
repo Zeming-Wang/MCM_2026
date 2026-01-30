@@ -1,7 +1,9 @@
 #目的： 展示特征贡献度，并结合 MCMC 采样的不确定性宽度 。#
 import numpy as np
 import matplotlib.pyplot as plt
-def plot_sensitivity_radar(sobol_indices, hdi_95):
+import os
+
+def plot_sensitivity_radar(sobol_indices, hdi_95, output_path=None):
     """
     sobol_indices: 各特征的贡献度
     hdi_95: 95% 高密度区间宽度
@@ -30,7 +32,14 @@ def plot_sensitivity_radar(sobol_indices, hdi_95):
     ax.set_xticklabels(categories)
     plt.title("Figure 3: Global Sensitivity Radar & Posterior Uncertainty", pad=20)
     plt.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
-    
-    # 图注 (Caption): 
-    # 雷达图量化了不同“软特征”对粉丝投票的影响权重。外围阴影区展示了 MCMC 采样
-    # 的不确定性。当面临极端数据（Outliers）时，阴影区的扩张提醒决策者模型此时的预测依赖于更宽的概率分布。
+    charts_dir = r"d:\MCM_2026_O\charts"
+    if output_path is None:
+        output_path = os.path.join(charts_dir, "uncertainty_radar.png")
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    fig.savefig(output_path, bbox_inches="tight")
+    plt.close(fig)
+
+if __name__ == "__main__":
+    example_sobol = [0.4, 0.3, 0.2, 0.15, 0.1]
+    example_hdi = [0.05, 0.04, 0.03, 0.02, 0.01]
+    plot_sensitivity_radar(example_sobol, example_hdi)

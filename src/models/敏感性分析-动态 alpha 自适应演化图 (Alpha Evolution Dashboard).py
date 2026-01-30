@@ -1,6 +1,8 @@
 #目的： 展示模型如何根据比赛阶段自动平衡“规则”与“统计数据” 。#
 import matplotlib.pyplot as plt
-def plot_alpha_evolution(weeks, alpha_vals, entropy_vals):
+import os
+
+def plot_alpha_evolution(weeks, alpha_vals, entropy_vals, output_path=None):
     fig, ax1 = plt.subplots(figsize=(10, 5), dpi=150)
     
     # 绘制 Alpha 曲线
@@ -19,8 +21,15 @@ def plot_alpha_evolution(weeks, alpha_vals, entropy_vals):
     
     plt.title("Figure 4: Dynamic Balancing of Physical Constraints vs. Bayesian Priors")
     fig.tight_layout()
-    
-    # 图注 (Caption): 
-    # 该图揭示了模型权重的演化逻辑：随着赛季推进选手减少，解空间熵 $H_c$ 逐渐下降（约束增强），
-    # 权重 $\alpha$ 随之平滑调整。这证明了模型在高确定性阶段（后期）更尊重物理排名规则，
-    # 而在混乱的早期阶段更依赖贝叶斯特征提取。
+    charts_dir = r"d:\MCM_2026_O\charts"
+    if output_path is None:
+        output_path = os.path.join(charts_dir, "alpha_evolution.png")
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    fig.savefig(output_path, bbox_inches="tight")
+    plt.close(fig)
+
+if __name__ == "__main__":
+    example_weeks = list(range(1, 11))
+    example_alpha = [0.3 + 0.05 * i for i in range(10)]
+    example_entropy = [1.0 - 0.06 * i for i in range(10)]
+    plot_alpha_evolution(example_weeks, example_alpha, example_entropy)
