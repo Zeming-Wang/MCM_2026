@@ -1,7 +1,7 @@
 .conda/
 __pycache__/
 .vscode/
-data/
+
 results/
 *.pyc
 assets/
