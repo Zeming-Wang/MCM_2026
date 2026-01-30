@@ -11,275 +11,236 @@ from pathlib import Path
 
 # ==========================================
 # 1. 基础物理约束层 (Base Layer - Model A)
-# 逻辑：利用 Norman Biggs 的空间过滤逻辑，确定最小可行解空间
 # ==========================================
-"""
-灵感来源于ResNet
-其中某个变量捕捉了物理规则无法描述的软因素（如粉丝狂热度等）
-
-"""
-
-
-"""
-数学原理：
-
-这里目前实现的是一个“无知先验”（Uniform Distribution）
-在实际的物理约束模型，应当计算满足相应不等式约束
-R_j + R_f > R_eliminated 的解空间
-
-alpha 熵驱动的权重调整
-数学原理：
-    熵（Entropy）是信息论中衡量随机变量不确定性的指标。
-    当一个随机变量的分布越均匀（即熵越大），其信息的不确定性就越大。
-    因此，我们可以利用熵来调整不同变量的权重，使得模型更关注那些信息更丰富的变量。
-"""
-
-"""
-获得MCMC得到关于V的不确定性估计
-"""
-
 class PhysicalConstraintModel:
-    def __init__(self, judges_scores, results):
+    def __init__(self, judges_scores, season):
         self.judges_scores = judges_scores
-        self.results = results  # 包含谁被淘汰的信息
+        self.season = season
 
-    def get_feasible_base_votes(self):
-        """
-        核心逻辑：通过不等式约束 R_j + R_f > R_eliminated 
-        返回一个基础的预测向量 V_base (期望均值)
-        """
-        # 此处简化为均值计算，实际应结合你之前的解空间穷举代码
-        n_contestants = len(self.judges_scores)
-        v_base = np.ones(n_contestants) / n_contestants 
-        return v_base
+    """
+    修改说明：
+    不再返回全 1 的平均分布，而是直接计算当周选手的法官评分百分比。
+    这是遵循题目 PDF 中 Jennie Garth 案例（29/117 = 24.8%）的核心逻辑。
+    """
+    def get_weekly_judge_percent(self):
+        total_sum = np.sum(self.judges_scores)
+        if total_sum == 0:
+            return np.ones(len(self.judges_scores)) / len(self.judges_scores)
+        return self.judges_scores / total_sum
 
+
+def _get_scoring_mode(season):
+    if season <= 2 or season >= 28:
+        return "rank"
+    return "percent"
+
+
+def _week_judge_cols(week):
+    return [
+        f"week{week}_judge1_score",
+        f"week{week}_judge2_score",
+        f"week{week}_judge3_score",
+        f"week{week}_judge4_score",
+    ]
+"""注意这里取了四个评委的分数，可能要结合数据清洗文件进行修改"""
+
+def _rank_descending(values):
+    values = np.asarray(values)
+    # 1 = 最好（数值越大排名越靠前）
+    return np.argsort(np.argsort(-values)) + 1
 # ==========================================
 # 2. 贝叶斯残差扰动层 (Residual Layer - Model B)
-# 逻辑：利用 pgmpy/PyMC3 构建特征扰动 BN
 # ==========================================
-
 def build_bayesian_residual_model(industry_idx, age_data, fan_base_data):
-    """
-    构建贝叶斯网络：Industry/Age -> Preference/Volatility -> Score_Residual
-    利用 V-Structure 捕捉不同特征间的竞争关系
-
-    """
     with pm.Model() as residual_model:
-        # --- 先验分布 (Priors) ---
-        # 外部特征节点
         industry_effect = pm.Normal('Industry_Effect', mu=0, sigma=1, shape=len(np.unique(industry_idx)))
         age_slope = pm.Normal('Age_Slope', mu=0, sigma=1)
-        """
-        上面的为特征嵌入，将离散的索引变为连续的隐变量
-        """
-
         
-        # 中间隐变量 (Latent Variables)
-        # Audience_Preference 受行业和初始粉丝量影响
         pref_mu = industry_effect[industry_idx] + age_slope * age_data
         audience_pref = pm.Normal('Audience_Preference', mu=pt.mean(pref_mu), sigma=1)
+        
         """
-        上面的为中间隐变量，受行业和初始粉丝量影响
-        和年龄效应相结合
+        修改说明：
+        Delta_V 现在代表“粉丝投票意向”。
+        在 fuse 阶段，它会被转化为 Fan Percent (P_f)。
         """
-        # 目标残差变量 (Score_Residual)
-        # 这里体现了从特征到残差的非线性映射
         delta_v = pm.Normal('Delta_V', mu=audience_pref, sigma=0.5, shape=len(age_data))
-        """
-        最终的残差Delta_V被建模为一个特征组合为均值的正态分布
-        """
         return residual_model
 
 # ==========================================
 # 3. 异构融合架构 (Ensemble Engine)
-# 逻辑：残差校准 + 投影算子 P
 # ==========================================
-
 class ResidualCalibrationEnsemble:
     def __init__(self, alpha_init=0.5):
-        self.alpha = alpha_init  # 自适应权重因子
+        self.alpha = alpha_init 
 
-    def projection_operator_P(self, v_raw):
+    """
+    修改说明：
+    根据题目 Season 3+ 的规则，最终得分是两个百分比的直接加和：
+    Total = Judge_Percent + Fan_Percent
+    这里使用 Softmax 将残差 Delta_V 映射为和为 1 的粉丝投票百分比。
+    """
+    def fuse_by_percentage(self, p_judge, delta_v_samples):
+        # 1. 计算残差均值并映射为粉丝百分比 P_f (和为1)
+        delta_v_mean = np.mean(delta_v_samples, axis=0)
+        exp_v = np.exp(delta_v_mean * self.alpha)
+        p_fan = exp_v / np.sum(exp_v)
         
-        """
-        投影算子 P：将融合结果强制映射回符合规则的单纯形空间 (Sum=1, >=0)
-        并满足淘汰不等式约束
-        
-        使用 Softmax 保证和为 1，或使用纠偏矩阵，具有放大差异的特征
-        适合处理投票/概率分布
-        """
+        # 2. 物理加和逻辑：Sum of Percents
+        v_final = p_judge + p_fan
+        return v_final, p_fan
 
-        exp_v = np.exp(v_raw)
-        return exp_v / np.sum(exp_v)
+    """
+    修改说明：
+    针对 Season 1-2 的排名制逻辑。
+    Total = Rank_Judge + Rank_Fan，取加和最高者（或秩和最小者）存活。
+    """
+    def fuse_by_ranking(self, p_judge, delta_v_samples):
+        # 将法官百分比转为排名 (分数越高排名越小, e.g., 1st, 2nd)
+        rank_j = len(p_judge) - np.argsort(np.argsort(p_judge))
+        
+        delta_v_mean = np.mean(delta_v_samples, axis=0)
+        rank_f = len(delta_v_mean) - np.argsort(np.argsort(delta_v_mean))
+        
+        return (rank_j + rank_f), rank_f
 
     def adaptive_weight_logic(self, solution_space_entropy):
-        
-        #根据解空间稀疏度 (信息熵) 动态调整 alpha
-        #解空间越小，物理约束越强，alpha 越小
-        
         self.alpha = 1.0 / (1.0 + np.exp(-solution_space_entropy))
         return self.alpha
 
-        """
-        自适应权重：使用sigmoid函数将熵映射到(0.5, 1)之间，
-        熵越大（解空间越不确定），alpha 越大，模型越依赖数据驱动的残差；
-        熵越小（解空间越确定），alpha 越小，模型越依赖物理约束。
 
-        """
+def _fan_percent_from_delta(delta_v_samples, alpha):
+    delta_v_mean = np.mean(delta_v_samples, axis=0)
+    exp_v = np.exp(delta_v_mean * alpha)
+    total = np.sum(exp_v)
+    if total == 0:
+        return np.ones_like(exp_v) / len(exp_v)
+    return exp_v / total
 
-    def fuse(self, v_base, delta_v_samples):
-        # 计算残差均值
-        delta_v_mean = np.mean(delta_v_samples, axis=0)
-        # 融合公式：V_final = P(V_base + alpha * Delta_V)
-        v_final_raw = v_base + self.alpha * delta_v_mean
-        return self.projection_operator_P(v_final_raw)
-
-# ==========================================
-# 4. 深度验证与灵敏度分析 (Sensitivity & Robustness)
-# 逻辑：Sobol Indices & 扰动实验
-# ==========================================
-
-def perform_sobol_analysis(ensemble_model):
-    
-    #使用 SALib 进行全局灵敏度分析，量化各特征对 V_final 的贡献
-    
-    problem = {
-        'num_vars': 3,
-        'names': ['Industry', 'Age', 'Fan_Base'],
-        'bounds': [[0, 1], [0, 1], [0, 1]]
-    }
-    param_values = saltelli.sample(problem, 1024)
-    # 模拟模型输出
-    Y = np.zeros([param_values.shape[0]])
-    for i, X in enumerate(param_values):
-        # 注入扰动并计算输出变化
-        Y[i] = np.var(ensemble_model.projection_operator_P(X))
-    
-    Si = sobol.analyze(problem, Y)
-    return Si # 返回 Sobol 指数
-
-def _load_module(module_name, relative_path):
-    base_dir = Path(__file__).resolve().parent
-    file_path = base_dir / relative_path
-    spec = importlib.util.spec_from_file_location(module_name, file_path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    """目前只能将模型产生的一个粉丝映射进行固定，避免散落"""
 
 # ==========================================
 # 5. 主逻辑执行流程
 # ==========================================
-
 if __name__ == "__main__":
     import os
-    # --- 数据路径占位 ---
     DATA_PATH = r"d:\MCM_2026_O\data\processed\processed_mcm_data.csv"
     
     if os.path.exists(DATA_PATH):
-        print(f"Loading data from {DATA_PATH}...")
         df = pd.read_csv(DATA_PATH)
         
-        # 选取 Season 1 的数据作为测试集
-        test_df = df[df['season'] == 1].copy()
-        test_df = test_df.reset_index(drop=True)
-        print(f"Loaded {len(test_df)} contestants from Season 1 for testing.")
+        CURRENT_SEASON = 1
+        MAX_WEEKS = 11
+        DRAWS = 40
+        TUNE = 40
+        CHAINS = 1
+        ENTROPY_VALUE = 0.61
 
-        # 1. 初始化物理层 (模型 A)
-        # 这里使用 judge_percent 作为基础分数的参考，或者继续使用均匀分布
-        # 为了演示代码运行，我们传入真实的评委分数（这里取 Week 1 的总分作为示例）
-        # 注意：PhysicalConstraintModel 目前只用到了 len(scores)
-        
-        # 计算 Week 1 总分
-        judge_cols = ['week1_judge1_score', 'week1_judge2_score', 'week1_judge3_score', 'week1_judge4_score']
-        # 确保是数值类型
-        for col in judge_cols:
-            test_df[col] = pd.to_numeric(test_df[col], errors='coerce').fillna(0)
-            
-        test_scores = test_df[judge_cols].sum(axis=1).values
-        
-        phys_model = PhysicalConstraintModel(test_scores, "Eliminated_Week_9") # 淘汰信息暂未具体使用
-        v_base = phys_model.get_feasible_base_votes()
-        print(f"Base Votes (Uniform): {v_base}")
-        
-        # 2. 运行贝叶斯残差层 (模型 B)
-        # 从处理后的数据中提取特征
-        age_mock = test_df['celebrity_age_during_season'].values
-        ind_mock_raw = test_df['industry_idx'].values
-        # 重编码 industry_idx 以适应当前子集 (确保索引从 0 到 N-1)
-        # 否则如果子集中只有索引 [13, 25]，而模型只创建了 shape=2 的变量，访问 13 会越界
-        _, ind_mock = np.unique(ind_mock_raw, return_inverse=True)
-        
-        # 使用 youth_factor 作为 fan_base_data 的代理，或者生成随机数
-        # 这里假设 fan_base_data 已经在预处理中体现，或者我们临时用 youth_factor * 0.5 + 0.2 模拟
-        if 'youth_factor' in test_df.columns:
-            fb_mock = test_df['youth_factor'].values * 0.5 + 0.2
-        else:
-            fb_mock = np.random.rand(len(test_df))
-        
-        print(f"Running Bayesian Residual Model with {len(age_mock)} samples...")
-        res_model = build_bayesian_residual_model(ind_mock, age_mock, fb_mock)
-        with res_model:
-            # 进行最大后验估计 (MAP)
-            map_estimate = pm.find_MAP()
-            # 进行 MCMC 采样获取后验宽度 (Uncertainty)
-            # 减少采样数以加快测试速度
-            trace = pm.sample(100, tune=100, chains=2, return_inferencedata=True, progressbar=False)
-        
-        # 3. 融合与校准
-        ensemble = ResidualCalibrationEnsemble()
-        # 计算解空间熵 (示例值)
-        h_c = 0.44 / 0.720 # 引用 Norman Biggs 的例子比率
-        alpha = ensemble.adaptive_weight_logic(h_c)
-        
-        # 获取 Delta_V 的后验均值
-        delta_v_samples = trace.posterior['Delta_V'].values
-        # posterior shape: (chains, draws, shape) -> 合并 chains 和 draws
-        delta_v_samples_reshaped = delta_v_samples.reshape(-1, delta_v_samples.shape[-1])
-        
-        v_final = ensemble.fuse(v_base, delta_v_samples_reshaped)
-        
-        # 4. 可视化结果
-        print(f"融合后的最终预测分布 (V_final): {v_final}")
-        print(f"Sum of V_final: {np.sum(v_final)}")
-        print(f"当前模型确定性权重 (Alpha): {alpha}")
-        
-        # 简单的结果展示
-        result_df = pd.DataFrame({
-            'Name': test_df['celebrity_name'],
-            'Base_Prob': v_base,
-            'Final_Prob': v_final
-        })
-        print("\nTop 5 Predictions:")
-        print(result_df.sort_values('Final_Prob', ascending=False).head(5))
-        charts_dir = r"d:\MCM_2026_O\charts"
-        tornado_mod = _load_module("tornado_chart", "灵敏度分析：龙卷风图 (Tornado Chart).py")
-        tornado_mod.plot_sensitivity_tornado()
-        alpha_mod = _load_module("alpha_evolution", "敏感性分析-动态 alpha 自适应演化图 (Alpha Evolution Dashboard).py")
-        weeks = list(range(1, len(v_final) + 1))
-        alpha_series = list(np.linspace(alpha * 0.8, alpha * 1.2, len(weeks)))
-        entropy_series = list(np.linspace(h_c * 1.2, h_c * 0.8, len(weeks)))
-        alpha_mod.plot_alpha_evolution(weeks, alpha_series, entropy_series)
-        proj_mod = _load_module("projection_heatmap", "一致性检验-投影偏移热力图 (Projection Consistency Heatmap).py")
-        delta_v_mean = np.mean(delta_v_samples_reshaped, axis=0)
-        v_raw = v_base + alpha * delta_v_mean
-        proj_mod.plot_projection_consistency(v_raw.tolist(), v_final.tolist())
-        boundary_mod = _load_module("boundary_fidelity", "一致性检验-淘汰边界的一致性验证图 (Boundary Fidelity Plot).py")
-        df_results = pd.DataFrame({
-            "JudgeRank": np.arange(1, len(v_final) + 1),
-            "PredictedScoreRank": np.argsort(-v_final) + 1,
-            "EliminatedStatus": test_df["results"].apply(lambda x: "Eliminated" if isinstance(x, str) and "Eliminated" in x else ("Winner" if isinstance(x, str) and "1st Place" in x else "Safe")),
-        })
-        boundary_mod.plot_boundary_fidelity(df_results)
-        radar_mod = _load_module("uncertainty_radar", "敏感性分析-贝叶斯后验区间与灵敏度雷达图 (Uncertainty Radar).py")
-        sobol_indices = [0.45, 0.33, 0.22, 0.18, 0.12]
-        hdi_95 = [0.05, 0.04, 0.03, 0.02, 0.01]
-        radar_mod.plot_sensitivity_radar(sobol_indices, hdi_95)
-        try:
-            ternary_mod = _load_module("ternary_plot", "物理约束层：解空间三元图 (Ternary Plot).py")
-            ternary_mod.plot_ternary_feasible_region()
-        except ModuleNotFoundError:
-            pass
-        dag_mod = _load_module("bayes_dag", "结构逻辑图：贝叶斯网络 (DAG).py")
-        dag_mod.plot_bayesian_network()
+        season_df = df[df["season"] == CURRENT_SEASON].copy().reset_index(drop=True)
+        mode = _get_scoring_mode(CURRENT_SEASON)
+
+        print(f"Season={CURRENT_SEASON}, Mode={mode}")
+
+        for week in range(1, MAX_WEEKS + 1):
+            judge_cols = [c for c in _week_judge_cols(week) if c in season_df.columns]
+            if not judge_cols:
+                continue
+
+            week_df = season_df[
+                ["celebrity_name", "celebrity_age_during_season", "industry_idx", "results"]
+                + judge_cols
+            ].copy()
+
+            for col in judge_cols:
+                week_df[col] = pd.to_numeric(week_df[col], errors="coerce").fillna(0.0)
+
+            judge_points = week_df[judge_cols].sum(axis=1).to_numpy()
+            active_mask = judge_points > 0
+            week_df = week_df[active_mask].reset_index(drop=True)
+            judge_points = judge_points[active_mask]
+
+            if len(week_df) <= 1:
+                break
+
+            p_judge = PhysicalConstraintModel(judge_points, CURRENT_SEASON).get_weekly_judge_percent()
+
+            age = pd.to_numeric(
+                week_df["celebrity_age_during_season"], errors="coerce"
+            ).fillna(0.0).to_numpy()
+            age_std = float(np.std(age))
+            age_z = (age - float(np.mean(age))) / (age_std if age_std > 0 else 1.0)
+
+            ind_raw = pd.to_numeric(
+                week_df["industry_idx"], errors="coerce"
+            ).fillna(0).astype(int).to_numpy()
+            _, ind = np.unique(ind_raw, return_inverse=True)
+
+            res_model = build_bayesian_residual_model(ind, age_z, np.zeros_like(age_z))
+            with res_model:
+                trace = pm.sample(
+                    DRAWS,
+                    tune=TUNE,
+                    chains=CHAINS,
+                    return_inferencedata=True,
+                    progressbar=False,
+                )
+
+            delta_v_samples = (
+                trace.posterior["Delta_V"].values.reshape(-1, len(week_df))
+            )
+
+            ensemble = ResidualCalibrationEnsemble()
+            alpha = ensemble.adaptive_weight_logic(ENTROPY_VALUE)
+            p_fan = _fan_percent_from_delta(delta_v_samples, alpha)
+
+            names = week_df["celebrity_name"].to_numpy()
+            actual_elim_mask = (
+                week_df["results"]
+                .astype(str)
+                .str.contains(f"Eliminated Week {week}", case=False, na=False)
+                .to_numpy()
+            )
+            actual_elim = week_df.loc[actual_elim_mask, "celebrity_name"].tolist()
+
+            if mode == "percent":
+                total = p_judge + p_fan
+                eliminated_idx = int(np.argmin(total))
+                metric_name = "Percent_Sum"
+                final_metric = total
+                ascending_flag = True
+            else:
+                rank_j = _rank_descending(judge_points)
+                rank_f = _rank_descending(p_fan)
+                rank_sum = rank_j + rank_f
+
+                """注意，这里的评委分在csv文件中没有呈现，只能暂时使用已有的评委分数"""
+                if CURRENT_SEASON >= 28 and len(rank_sum) >= 2:
+                    bottom2 = np.argsort(rank_sum)[-2:]
+                    eliminated_idx = int(bottom2[np.argmin(judge_points[bottom2])])
+                    metric_name = "Rank_Sum_Revote"
+                else:
+                    eliminated_idx = int(np.argmax(rank_sum))
+                    metric_name = "Rank_Sum"
+
+                final_metric = rank_sum
+                ascending_flag = True
+
+            result_df = pd.DataFrame(
+                {
+                    "Week": week,
+                    "Name": names,
+                    "Judge_P": p_judge,
+                    "Fan_P": p_fan,
+                    metric_name: final_metric,
+                }
+            )
+
+            predicted_elim_name = str(names[eliminated_idx])
+            print(f"\nWeek={week}, Predicted_Eliminated={predicted_elim_name}, Actual_Eliminated={actual_elim}")
+            print(result_df.sort_values(metric_name, ascending=ascending_flag).head(5))
+
+        """
+        后续分析：此处可调用之前的可视化模块进行 Check
+        """
     else:
-        print(f"Error: Processed data file not found at {DATA_PATH}")
+        print(f"Error: Data file not found.")
