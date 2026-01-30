@@ -42,6 +42,7 @@ def build_bayesian_residual_model(industry_idx, age_data, fan_base_data):
     """
     构建贝叶斯网络：Industry/Age -> Preference/Volatility -> Score_Residual
     利用 V-Structure 捕捉不同特征间的竞争关系
+
     """
     with pm.Model() as residual_model:
         # --- 先验分布 (Priors) ---
@@ -49,17 +50,22 @@ def build_bayesian_residual_model(industry_idx, age_data, fan_base_data):
         industry_effect = pm.Normal('Industry_Effect', mu=0, sigma=1, shape=len(np.unique(industry_idx)))
         age_slope = pm.Normal('Age_Slope', mu=0, sigma=1)
         """
-        特征嵌入，将离散的索引变为连续的隐变量
+        上面的为特征嵌入，将离散的索引变为连续的隐变量
         """
         # 中间隐变量 (Latent Variables)
         # Audience_Preference 受行业和初始粉丝量影响
         pref_mu = industry_effect[industry_idx] + age_slope * age_data
         audience_pref = pm.Normal('Audience_Preference', mu=pt.mean(pref_mu), sigma=1)
-        
+        """
+        上面的为中间隐变量，受行业和初始粉丝量影响
+        和年龄效应相结合
+        """
         # 目标残差变量 (Score_Residual)
         # 这里体现了从特征到残差的非线性映射
         delta_v = pm.Normal('Delta_V', mu=audience_pref, sigma=0.5, shape=len(age_data))
-        
+        """
+        最终的残差Delta_V被建模为一个特征组合为均值的正态分布
+        """
         return residual_model
 
 # ==========================================
@@ -73,10 +79,13 @@ class ResidualCalibrationEnsemble:
 
     def projection_operator_P(self, v_raw):
         
-        #投影算子 P：将融合结果强制映射回符合规则的单纯形空间 (Sum=1, >=0)
-        #并满足淘汰不等式约束
+        """
+        投影算子 P：将融合结果强制映射回符合规则的单纯形空间 (Sum=1, >=0)
+        并满足淘汰不等式约束
         
-        # 使用 Softmax 保证和为 1，或使用纠偏矩阵
+        使用 Softmax 保证和为 1，或使用纠偏矩阵
+        """
+
         exp_v = np.exp(v_raw)
         return exp_v / np.sum(exp_v)
 
@@ -87,6 +96,13 @@ class ResidualCalibrationEnsemble:
         
         self.alpha = 1.0 / (1.0 + np.exp(-solution_space_entropy))
         return self.alpha
+
+        """
+        自适应权重：使用sigmoid函数将熵映射到(0.5, 1)之间，
+        熵越大（解空间越不确定），alpha 越大，模型越依赖数据驱动的残差；
+        熵越小（解空间越确定），alpha 越小，模型越依赖物理约束。
+
+        """
 
     def fuse(self, v_base, delta_v_samples):
         # 计算残差均值

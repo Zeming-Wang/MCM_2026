@@ -1,7 +1,14 @@
 .conda/
 __pycache__/
 .vscode/
-
-results/
 *.pyc
-assets/
+
+# Ignore contents but keep directories
+results/*
+!results/.gitkeep
+
+assets/*
+!assets/.gitkeep
+
+data/processed/*
+!data/processed/.gitkeep
