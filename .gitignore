@@ -1,0 +1,7 @@
+.conda/
+__pycache__/
+.vscode/
+
+results/
+*.pyc
+assets/
