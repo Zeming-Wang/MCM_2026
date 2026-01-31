@@ -74,12 +74,7 @@ class ResidualCalibrationEnsemble:
     def __init__(self, alpha_init=0.5):
         self.alpha = alpha_init 
 
-    """
-    修改说明：
-    根据题目 Season 3+ 的规则，最终得分是两个百分比的直接加和：
-    Total = Judge_Percent + Fan_Percent
-    这里使用 Softmax 将残差 Delta_V 映射为和为 1 的粉丝投票百分比。
-    """
+  
     def fuse_by_percentage(self, p_judge, delta_v_samples):
         # 1. 计算残差均值并映射为粉丝百分比 P_f (和为1)
         delta_v_mean = np.mean(delta_v_samples, axis=0)
