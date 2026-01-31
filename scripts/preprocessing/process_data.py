@@ -4,13 +4,23 @@ import os
 
 def optimized_cleaning_for_mcm(df):
     # 1. 统一处理缺失值：区分“不复存在”与“数据丢失”
-    judge_cols = ['week1_judge1_score', 'week1_judge2_score', 'week1_judge3_score', 'week1_judge4_score']
-    
-    # 将 N/A 转换为 0 或进行插值前，先记录“评委人数”特征
-    # 处理 'N/A' 字符串，将其转换为 NaN 以便计算
-    for col in judge_cols:
+    judge_cols = [
+        'week1_judge1_score',
+        'week1_judge2_score',
+        'week1_judge3_score',
+        'week1_judge4_score',
+    ]
+
+    all_judge_cols = []
+    for week in range(1, 12):
+        for j in range(1, 5):
+            col = f"week{week}_judge{j}_score"
+            if col in df.columns:
+                all_judge_cols.append(col)
+
+    for col in all_judge_cols:
         df[col] = pd.to_numeric(df[col], errors='coerce')
-    
+
     df['active_judges'] = df[judge_cols].notnull().sum(axis=1)
     
     # 2. 核心：计算“法官百分比 (Judges Score Percent)”
@@ -48,6 +58,66 @@ def optimized_cleaning_for_mcm(df):
     # 有些周选手跳两支舞，数据会波动，需取平均或合并
     return df
 
+
+def build_weekly_long(df, max_weeks=11):
+    keep_cols = [
+        "celebrity_name",
+        "ballroom_partner",
+        "celebrity_industry",
+        "celebrity_homestate",
+        "celebrity_homecountry/region",
+        "celebrity_age_during_season",
+        "season",
+        "results",
+        "placement",
+        "youth_factor",
+        "is_musician",
+        "industry_idx",
+    ]
+
+    keep_cols = [c for c in keep_cols if c in df.columns]
+
+    frames = []
+    for week in range(1, max_weeks + 1):
+        week_cols = [
+            f"week{week}_judge1_score",
+            f"week{week}_judge2_score",
+            f"week{week}_judge3_score",
+            f"week{week}_judge4_score",
+        ]
+        week_cols = [c for c in week_cols if c in df.columns]
+        if not week_cols:
+            continue
+
+        tmp = df[keep_cols + week_cols].copy()
+        for col in week_cols:
+            tmp[col] = pd.to_numeric(tmp[col], errors="coerce")
+
+        tmp["week"] = week
+        tmp["active_judges_week"] = tmp[week_cols].notnull().sum(axis=1)
+        tmp["judge_points"] = tmp[week_cols].fillna(0.0).sum(axis=1)
+        tmp["is_active"] = (tmp["judge_points"] > 0).astype(int)
+        tmp["eliminated_flag"] = (
+            tmp["results"]
+            .astype(str)
+            .str.contains(f"Eliminated Week {week}", case=False, na=False)
+            .astype(int)
+        )
+
+        frames.append(tmp)
+
+    if not frames:
+        return pd.DataFrame()
+
+    long_df = pd.concat(frames, ignore_index=True)
+    long_df["judge_percent"] = (
+        long_df.groupby(["season", "week"])["judge_points"]
+        .transform(lambda s: s / s.sum() if float(s.sum()) > 0 else 0.0)
+        .fillna(0.0)
+    )
+
+    return long_df
+
 if __name__ == "__main__":
     raw_path = os.path.join("data", "raw", "2026_MCM_Problem_C_Data.csv")
     processed_dir = os.path.join("data", "processed")
@@ -64,6 +134,12 @@ if __name__ == "__main__":
         print(f"Data processed and saved to {processed_path}")
         print(f"Processed data shape: {processed_df.shape}")
         print(f"Columns: {processed_df.columns.tolist()}")
+
+        weekly_long_path = os.path.join(processed_dir, "processed_mcm_weekly_long.csv")
+        weekly_long_df = build_weekly_long(processed_df, max_weeks=11)
+        weekly_long_df.to_csv(weekly_long_path, index=False)
+        print(f"Weekly long data saved to {weekly_long_path}")
+        print(f"Weekly long data shape: {weekly_long_df.shape}")
     else:
         print(f"Error: Raw data file not found at {raw_path}")
 
