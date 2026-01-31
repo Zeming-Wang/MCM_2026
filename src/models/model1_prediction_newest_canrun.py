@@ -229,10 +229,14 @@ def judge_revote_bottom_two(bottom2_indices, judge_scores_bottom2):
 # ==========================================
 if __name__ == "__main__":
     import os
+    from pathlib import Path
 
-    DATA_PATH = r"d:\MCM_2026_O\data\processed\processed_mcm_wide_clean.csv"
+    project_root = Path(
+        os.environ.get("MCM_PROJECT_ROOT", str(Path(__file__).resolve().parents[2]))
+    ).resolve()
 
-    OUT_PATH = r"d:\MCM_2026_O\data\processed\model1_fan_vote_predictions.csv"
+    DATA_PATH = str(project_root / "data" / "processed" / "processed_mcm_wide_clean.csv")
+    OUT_PATH = str(project_root / "data" / "processed" / "model1_fan_vote_predictions.csv")
 
     MAX_WEEKS = 11
     DRAWS = 200

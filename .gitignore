@@ -6,9 +6,19 @@ charts/*
 # Ignore contents but keep directories
 results/*
 !results/.gitkeep
-
+.png/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+*.tif
+*.webp
+*.svg
 assets/*
 !assets/.gitkeep
+*.csv
 
 data/processed/*
 !data/processed/.gitkeep

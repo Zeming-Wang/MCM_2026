@@ -27,7 +27,7 @@ def _safe_corr(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.corrcoef(a, b)[0, 1])
 
 
-def build_percent_sum_results(
+def build_rank_sum_results(
     processed_path: str,
     fan_pred_path: str,
     out_path: str,
@@ -46,7 +46,7 @@ def build_percent_sum_results(
         raise ValueError(f"Missing required columns in processed file: {miss}")
 
     fan = pd.read_csv(fan_pred_path, encoding="utf-8-sig")
-    fan_need = {"Season", "Week", "Name", "Fan_Vote_Percent"}
+    fan_need = {"Season", "Week", "Name", "Fan_Vote_Percent", "Fan_Vote_Rank"}
     fan_miss = sorted(fan_need - set(fan.columns))
     if fan_miss:
         raise ValueError(f"Missing required columns in fan prediction file: {fan_miss}")
@@ -55,7 +55,6 @@ def build_percent_sum_results(
     fan["Season"] = pd.to_numeric(fan["Season"], errors="coerce").astype("Int64")
     fan["Week"] = pd.to_numeric(fan["Week"], errors="coerce").astype("Int64")
     fan["Name"] = fan["Name"].astype(str)
-    fan["Fan_Vote_Percent"] = pd.to_numeric(fan["Fan_Vote_Percent"], errors="coerce").fillna(0.0)
 
     seasons = (
         pd.to_numeric(df["season"], errors="coerce")
@@ -89,9 +88,9 @@ def build_percent_sum_results(
             if len(week_df) < 2:
                 continue
 
+            judge_rank = _rank_descending(judge_points)
             s = float(np.sum(judge_points))
             judge_percent = judge_points / (s if s > 0 else 1.0)
-            judge_rank = _rank_descending(judge_points)
 
             elim_flag = (
                 week_df["results"]
@@ -118,7 +117,7 @@ def build_percent_sum_results(
                     Judge_Rank=judge_rank,
                     Judge_Percent=judge_percent,
                 ),
-                week_fan[["Season", "Week", "Name", "Fan_Vote_Percent"]],
+                week_fan[["Season", "Week", "Name", "Fan_Vote_Percent", "Fan_Vote_Rank"]],
                 on=["Season", "Week", "Name"],
                 how="inner",
             )
@@ -126,12 +125,22 @@ def build_percent_sum_results(
             if len(merged) < 2:
                 continue
 
-            merged["Combined_Percent_Sum"] = merged["Judge_Percent"] + merged["Fan_Vote_Percent"]
-            merged["Combined_Rank"] = (
-                merged["Combined_Percent_Sum"].rank(method="dense", ascending=False).astype(int)
+            merged["Fan_Vote_Percent"] = pd.to_numeric(
+                merged["Fan_Vote_Percent"], errors="coerce"
+            ).fillna(0.0)
+            merged["Fan_Vote_Rank"] = pd.to_numeric(
+                merged["Fan_Vote_Rank"], errors="coerce"
+            ).fillna(0.0)
+            merged["Judge_Rank"] = pd.to_numeric(merged["Judge_Rank"], errors="coerce").fillna(
+                0.0
             )
 
-            worst_idx = int(np.argmin(merged["Combined_Percent_Sum"].to_numpy(dtype=float)))
+            merged["Combined_Rank_Sum"] = merged["Judge_Rank"] + merged["Fan_Vote_Rank"]
+            merged["Combined_Rank"] = (
+                merged["Combined_Rank_Sum"].rank(method="dense", ascending=True).astype(int)
+            )
+
+            worst_idx = int(np.argmax(merged["Combined_Rank_Sum"].to_numpy(dtype=float)))
             predicted_elim_name = str(merged.iloc[worst_idx]["Name"])
 
             merged["Actual_Eliminated_Name"] = actual_elim_name
@@ -140,6 +149,7 @@ def build_percent_sum_results(
                 int
             )
             merged["Actual_Eliminated_Flag"] = (merged["Name"] == actual_elim_name).astype(int)
+            merged["Source_Script"] = "score2_higher.py"
 
             cols_out = [
                 "Season",
@@ -149,22 +159,24 @@ def build_percent_sum_results(
                 "Judge_Rank",
                 "Judge_Percent",
                 "Fan_Vote_Percent",
-                "Combined_Percent_Sum",
+                "Fan_Vote_Rank",
+                "Combined_Rank_Sum",
                 "Combined_Rank",
                 "Actual_Eliminated_Name",
                 "Predicted_Eliminated_Name",
                 "Actual_Eliminated_Flag",
                 "Predicted_Eliminated_Flag",
+                "Source_Script",
             ]
             all_rows.append(merged[cols_out].copy())
 
             corr_fan = _safe_corr(
-                merged["Combined_Percent_Sum"].to_numpy(dtype=float),
-                merged["Fan_Vote_Percent"].to_numpy(dtype=float),
+                merged["Combined_Rank"].to_numpy(dtype=float),
+                merged["Fan_Vote_Rank"].to_numpy(dtype=float),
             )
             corr_judge = _safe_corr(
-                merged["Combined_Percent_Sum"].to_numpy(dtype=float),
-                merged["Judge_Percent"].to_numpy(dtype=float),
+                merged["Combined_Rank"].to_numpy(dtype=float),
+                merged["Judge_Rank"].to_numpy(dtype=float),
             )
             summary_rows.append(
                 {
@@ -176,13 +188,14 @@ def build_percent_sum_results(
                     "Hit_Elimination": int(
                         actual_elim_name != "" and predicted_elim_name == actual_elim_name
                     ),
-                    "Corr_Combined_vs_FanPercent": corr_fan,
-                    "Corr_Combined_vs_JudgePercent": corr_judge,
-                    "Leaning_FanPercent": int(
+                    "Corr_Combined_vs_FanRank": corr_fan,
+                    "Corr_Combined_vs_JudgeRank": corr_judge,
+                    "Leaning_FanRank": int(
                         (not np.isnan(corr_fan))
                         and (not np.isnan(corr_judge))
                         and (corr_fan > corr_judge)
                     ),
+                    "Source_Script": "score2_higher.py",
                 }
             )
 
@@ -198,12 +211,14 @@ def build_percent_sum_results(
                 "Judge_Rank",
                 "Judge_Percent",
                 "Fan_Vote_Percent",
-                "Combined_Percent_Sum",
+                "Fan_Vote_Rank",
+                "Combined_Rank_Sum",
                 "Combined_Rank",
                 "Actual_Eliminated_Name",
                 "Predicted_Eliminated_Name",
                 "Actual_Eliminated_Flag",
                 "Predicted_Eliminated_Flag",
+                "Source_Script",
             ]
         )
 
@@ -219,19 +234,13 @@ def build_percent_sum_results(
 
 
 if __name__ == "__main__":
-    from pathlib import Path
+    PROCESSED_PATH = r"d:\MCM_2026_O\data\processed\processed_mcm_wide_clean.csv"
+    FAN_PRED_PATH = r"d:\MCM_2026_O\data\processed\model1_fan_vote_predictions_higher.csv"
 
-    project_root = Path(
-        os.environ.get("MCM_PROJECT_ROOT", str(Path(__file__).resolve().parents[2]))
-    ).resolve()
+    OUT_PATH = r"d:\MCM_2026_O\data\processed\model2_rank_sum_scoring_higher.csv"
+    OUT_SUMMARY_PATH = r"d:\MCM_2026_O\data\processed\model2_rank_sum_week_summary_higher.csv"
 
-    PROCESSED_PATH = str(project_root / "data" / "processed" / "processed_mcm_wide_clean.csv")
-    FAN_PRED_PATH = str(project_root / "data" / "processed" / "model1_fan_vote_predictions.csv")
-
-    OUT_PATH = str(project_root / "data" / "processed" / "model1_percent_sum_scoring.csv")
-    OUT_SUMMARY_PATH = str(project_root / "data" / "processed" / "model1_percent_sum_week_summary.csv")
-
-    out_df, summary_df = build_percent_sum_results(
+    out_df, summary_df = build_rank_sum_results(
         processed_path=PROCESSED_PATH,
         fan_pred_path=FAN_PRED_PATH,
         out_path=OUT_PATH,

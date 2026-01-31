@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import os
 import re
+from pathlib import Path
 
 def clean_raw_to_wide_clean(df):
     df = df.copy()
@@ -106,22 +107,20 @@ def build_weekly_long(df, max_weeks=11):
     return long_df
 
 if __name__ == "__main__":
-    raw_path = os.path.join("data", "raw", "2026_MCM_Problem_C_Data.csv")
-    processed_dir = os.path.join("data", "processed")
-    processed_path = os.path.join(processed_dir, "processed_mcm_wide_clean.csv")
+    project_root = Path(__file__).resolve().parents[2]
+    raw_path = project_root / "data" / "raw" / "2026_MCM_Problem_C_Data.csv"
+    processed_dir = project_root / "data" / "processed"
+    processed_path = processed_dir / "processed_mcm_wide_clean.csv"
 
-    if not os.path.exists(processed_dir):
-        os.makedirs(processed_dir)
-        
-    if os.path.exists(raw_path):
+    processed_dir.mkdir(parents=True, exist_ok=True)
+
+    if raw_path.exists():
         print(f"Reading data from {raw_path}...")
         df = pd.read_csv(raw_path, encoding="utf-8-sig")
         processed_df = clean_raw_to_wide_clean(df)
-        processed_df.to_csv(processed_path, index=False)
+        processed_df.to_csv(processed_path, index=False, encoding="utf-8-sig")
         print(f"Data processed and saved to {processed_path}")
         print(f"Processed data shape: {processed_df.shape}")
         print(f"Columns: {processed_df.columns.tolist()}")
     else:
         print(f"Error: Raw data file not found at {raw_path}")
-
-#

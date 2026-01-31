@@ -140,6 +140,7 @@ def build_percent_sum_results(
                 int
             )
             merged["Actual_Eliminated_Flag"] = (merged["Name"] == actual_elim_name).astype(int)
+            merged["Source_Script"] = "score1_higher.py"
 
             cols_out = [
                 "Season",
@@ -155,6 +156,7 @@ def build_percent_sum_results(
                 "Predicted_Eliminated_Name",
                 "Actual_Eliminated_Flag",
                 "Predicted_Eliminated_Flag",
+                "Source_Script",
             ]
             all_rows.append(merged[cols_out].copy())
 
@@ -183,6 +185,7 @@ def build_percent_sum_results(
                         and (not np.isnan(corr_judge))
                         and (corr_fan > corr_judge)
                     ),
+                    "Source_Script": "score1_higher.py",
                 }
             )
 
@@ -204,6 +207,7 @@ def build_percent_sum_results(
                 "Predicted_Eliminated_Name",
                 "Actual_Eliminated_Flag",
                 "Predicted_Eliminated_Flag",
+                "Source_Script",
             ]
         )
 
@@ -219,17 +223,11 @@ def build_percent_sum_results(
 
 
 if __name__ == "__main__":
-    from pathlib import Path
+    PROCESSED_PATH = r"d:\MCM_2026_O\data\processed\processed_mcm_wide_clean.csv"
+    FAN_PRED_PATH = r"d:\MCM_2026_O\data\processed\model1_fan_vote_predictions_higher.csv"
 
-    project_root = Path(
-        os.environ.get("MCM_PROJECT_ROOT", str(Path(__file__).resolve().parents[2]))
-    ).resolve()
-
-    PROCESSED_PATH = str(project_root / "data" / "processed" / "processed_mcm_wide_clean.csv")
-    FAN_PRED_PATH = str(project_root / "data" / "processed" / "model1_fan_vote_predictions.csv")
-
-    OUT_PATH = str(project_root / "data" / "processed" / "model1_percent_sum_scoring.csv")
-    OUT_SUMMARY_PATH = str(project_root / "data" / "processed" / "model1_percent_sum_week_summary.csv")
+    OUT_PATH = r"d:\MCM_2026_O\data\processed\model2_percent_sum_scoring_higher.csv"
+    OUT_SUMMARY_PATH = r"d:\MCM_2026_O\data\processed\model2_percent_sum_week_summary_higher.csv"
 
     out_df, summary_df = build_percent_sum_results(
         processed_path=PROCESSED_PATH,
