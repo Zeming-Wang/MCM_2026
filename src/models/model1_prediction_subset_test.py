@@ -155,8 +155,14 @@ def _rank_descending(values):
 
 
 if __name__ == "__main__":
-    DATA_PATH = r"d:\MCM_2026_O\data\processed\processed_mcm_wide_clean.csv"
-    OUT_PATH = r"d:\MCM_2026_O\results\model1_fan_vote_predictions_subset.csv"
+    from pathlib import Path
+
+    project_root = Path(
+        os.environ.get("MCM_PROJECT_ROOT", str(Path(__file__).resolve().parents[2]))
+    ).resolve()
+
+    DATA_PATH = str(project_root / "data" / "processed" / "processed_mcm_wide_clean.csv")
+    OUT_PATH = str(project_root / "results" / "model1_fan_vote_predictions_subset.csv")
 
     TARGET_SEASONS = [1, 2, 3, 7, 8, 23, 24, 27, 28, 29]
     MAX_WEEKS = 11

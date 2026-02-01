@@ -7,7 +7,15 @@ import os
 # ==========================================
 # 0. 配置
 # ==========================================
-DATA_PATH = r"d:\MCM_2026_O\data\processed\processed_dwts_long.csv"
+from pathlib import Path
+
+PROJECT_ROOT = Path(
+    os.environ.get("MCM_PROJECT_ROOT", str(Path(__file__).resolve().parents[2]))
+).resolve()
+
+DATA_PATH = str(PROJECT_ROOT / "data" / "processed" / "processed_dwts_long.csv")
+DEFAULT_OUTPUT_DIR = str(PROJECT_ROOT / "data" / "processed")
+
 TARGET_SEASON = 1   # 可切换 season
 MAX_WEEKS = 11      # 不同赛季自动适配
 
@@ -180,11 +188,9 @@ def run_season_model(df, season):
 
     if all_results:
         final_df = pd.concat(all_results, ignore_index=True)
-        output_dir = r"d:\MCM_2026_O\data\processed"
+        output_dir = DEFAULT_OUTPUT_DIR
         os.makedirs(output_dir, exist_ok=True)
-        output_path = os.path.join(
-            output_dir, f"season{season}_fan_fusion_results.csv"
-        )
+        output_path = os.path.join(output_dir, f"season{season}_fan_fusion_results.csv")
         final_df.to_csv(output_path, index=False, encoding="utf-8-sig")
         print(f"\nSaved season {season} results to {output_path}")
 
