@@ -149,12 +149,12 @@ def process_and_plot():
     label_x = "Physique & Skill Factor (Judges' Path)"
     label_y = "Popularity & Social Factor (Fans' Path)"
     
-    ax.set_xlabel(label_x, fontsize=11, labelpad=10)
-    ax.set_ylabel(label_y, fontsize=11, labelpad=10)
-    ax.set_zlabel('Total Votes (Outcome)', fontsize=11, labelpad=10)
+    ax.set_xlabel(label_x, fontsize=12, fontweight='bold', labelpad=10)
+    ax.set_ylabel(label_y, fontsize=12, fontweight='bold', labelpad=10)
+    ax.set_zlabel('Total Votes (Outcome)', fontsize=12, fontweight='bold', labelpad=10)
     
     # 设置标题
-    ax.set_title('Dual-Path Impact Response Surface\n(Judges vs Fans Interaction)', fontsize=14, pad=20)
+    ax.set_title('Dual-Path Impact Response Surface\n(Judges vs Fans Interaction)', fontsize=16, fontweight='bold', pad=20)
     
     # 添加颜色条
     cbar = fig.colorbar(surf, shrink=0.5, aspect=10, pad=0.1)

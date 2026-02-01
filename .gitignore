@@ -39,3 +39,15 @@ data/processed/*
 # Specific data folders containing images
 data/图片集1.0/
 data/图片集2.0/
+
+# Allow images in result_charts
+!result_charts/
+!result_charts/*.png
+!result_charts/*.jpg
+!result_charts/*.jpeg
+!result_charts/*.gif
+!result_charts/*.bmp
+!result_charts/*.tiff
+!result_charts/*.tif
+!result_charts/*.webp
+!result_charts/*.svg

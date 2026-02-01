@@ -166,7 +166,7 @@ def main() -> None:
     saved = plot_ridgeline_sensitivity(
         df,
         out_path,
-        title="Mechanism Sensitivity Distribution by Season (Scheme B)",
+        title="Mechanism Sensitivity Distribution by Season",
     )
     print(f"Saved: {saved}")
 

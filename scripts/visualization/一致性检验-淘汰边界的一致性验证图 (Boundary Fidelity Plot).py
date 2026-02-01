@@ -167,12 +167,12 @@ def plot_boundary_fidelity_parallel_by_system(df_results: pd.DataFrame, output_p
             ax=ax,
         )
         ax.invert_yaxis()
-        ax.set_title(title)
-        ax.set_ylabel("Rank (1 is best)")
+        ax.set_title(title, fontsize=14, fontweight='bold')
+        ax.set_ylabel("Rank (1 is best)", fontsize=12, fontweight='bold')
         ax.grid(axis="y", linestyle="--", alpha=0.35)
         ax.legend(loc="upper right", frameon=True)
 
-    fig.suptitle("Boundary Fidelity: Judge Rank vs Predicted Rank (Split by Scoring System)", y=0.995)
+    fig.suptitle("Boundary Fidelity: Judge Rank vs Predicted Rank (Split by Scoring System)", y=0.995, fontsize=16, fontweight='bold')
     fig.tight_layout()
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     fig.savefig(output_path, bbox_inches="tight")
