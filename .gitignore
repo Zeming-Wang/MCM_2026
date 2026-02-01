@@ -12,3 +12,20 @@ assets/*
 
 data/processed/*
 !data/processed/.gitkeep
+
+# System files
+.DS_Store
+
+# Images
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.tiff
+*.webp
+*.svg
+
+# Specific data folders containing images
+data/图片集1.0/
+data/图片集2.0/
