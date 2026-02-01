@@ -1,3 +1,8 @@
+"""
+百分比计算方法
+"""
+
+
 import os
 import numpy as np
 import pandas as pd

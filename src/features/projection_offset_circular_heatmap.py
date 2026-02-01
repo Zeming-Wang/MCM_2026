@@ -159,6 +159,11 @@ def _plot_circular_cluster_heatmap(
     for xs, ys, col in zip(icoord, dcoord, colors, strict=False):
         xs = np.asarray(xs, dtype=float)
         ys = np.asarray(ys, dtype=float)
+
+        # Only plot lines connected to the leaves (close to the arc)
+        if np.min(ys) > 0.0:
+            continue
+
         theta = start_angle + 2.0 * np.pi * (xs - x_min) / (x_max - x_min)
         theta = _unwrap_short(theta)
         r = r_dend_outer - (ys / y_max) * (r_dend_outer - r_dend_inner)

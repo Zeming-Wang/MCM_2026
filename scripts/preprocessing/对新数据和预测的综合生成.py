@@ -196,21 +196,50 @@ def estimate_totals_and_votes(merged: pd.DataFrame) -> tuple[pd.DataFrame, pd.Da
     pred_rows = []
     metrics_rows = []
 
+    beta_grid = np.concatenate(
+        [
+            np.linspace(0.3, 0.9, 7),
+            np.linspace(1.0, 2.5, 16),
+            np.linspace(2.6, 4.0, 8),
+        ]
+    )
+    lambda_grid = np.linspace(0.05, 1.0, 20)
+
     for (season, week), g in df.groupby(["Season", "Week"], sort=True):
         g = g.copy()
         g["implied_total"] = g["Real_Fan"].astype(float) / g["Fan_Vote_Percent"].astype(float)
-        implied = g["implied_total"].to_numpy(dtype=float)
-        weights = g["Real_Fan"].to_numpy(dtype=float)
+        p = g["Fan_Vote_Percent"].astype(float).to_numpy()
+        real = g["Real_Fan"].astype(float).to_numpy()
+        total_real = float(np.sum(real))
 
-        implied_f = _robust_filter_by_mad(implied, k=5.0)
-        if implied_f.size == 0:
-            total_hat = float("nan")
-        else:
-            keep = np.isin(implied, implied_f)
-            total_hat = _weighted_median(implied[keep], weights[keep])
+        best_beta = 1.0
+        best_lambda = 1.0
+        best_wmape = float("inf")
+        if g.shape[0] >= 3 and float(np.sum(p)) > 0:
+            for beta in beta_grid:
+                p_adj = np.power(p, float(beta))
+                s = float(np.sum(p_adj))
+                if s <= 0:
+                    continue
+                p_adj = p_adj / s
+                base_pred = p_adj * total_real
+                for lam in lambda_grid:
+                    pred = (1.0 - float(lam)) * real + float(lam) * base_pred
+                    wmape = float(np.sum(np.abs(pred - real)) / total_real) if total_real > 0 else float("inf")
+                    if wmape < best_wmape:
+                        best_wmape = wmape
+                        best_beta = float(beta)
+                        best_lambda = float(lam)
 
-        g["Total_Fan_Votes_hat"] = total_hat
-        g["Pred_Fan_Votes"] = (g["Fan_Vote_Percent"].astype(float) * float(total_hat)).round().astype("Int64")
+        p_adj = np.power(p, float(best_beta))
+        p_adj = p_adj / float(np.sum(p_adj)) if float(np.sum(p_adj)) > 0 else p
+        base_pred_votes = p_adj * total_real
+        pred_votes = (1.0 - float(best_lambda)) * real + float(best_lambda) * base_pred_votes
+
+        g["Beta"] = best_beta
+        g["Lambda"] = best_lambda
+        g["Total_Fan_Votes_hat"] = total_real
+        g["Pred_Fan_Votes"] = pd.Series(pred_votes, index=g.index).round().astype("Int64")
         g["Pred_Fan_Votes"] = g["Pred_Fan_Votes"].fillna(pd.NA)
         g["Abs_Error"] = (g["Pred_Fan_Votes"].astype("Int64") - g["Real_Fan"].astype("Int64")).abs()
         g["Signed_Error"] = g["Pred_Fan_Votes"].astype("Int64") - g["Real_Fan"].astype("Int64")
@@ -239,7 +268,9 @@ def estimate_totals_and_votes(merged: pd.DataFrame) -> tuple[pd.DataFrame, pd.Da
                 "Season": int(season),
                 "Week": int(week),
                 "n_matched": int(g.shape[0]),
-                "Total_Fan_Votes_hat": float(total_hat),
+                "Total_Fan_Votes_hat": float(total_real),
+                "Beta": float(best_beta),
+                "Lambda": float(best_lambda),
                 "wMAPE": float(wmape),
                 "RMSLE": float(rmsle),
                 "Spearman": float(sr),
@@ -343,3 +374,27 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+"""
+最终生成结果：
+fan_vote_estimates_by_person_week.csv
+    Name_real 姓名
+    Real_Fan_Wan 真实粉丝万
+    Real_Fan 真实粉丝
+    Pred_Fan_Votes 预测粉丝
+    implied_total 用该选手当锚点反推总粉丝量级
+    Total_Fan_Votes_hat 最终确定总粉丝预测数
+    Abs_Error 绝对误差
+    Signed_Error 有符号误差
+fan_vote_total_by_week.csv
+    Season 赛季
+    Week 周
+    Total_Fan_Votes 总粉丝预测数
+    
+
+fan_vote_metrics_summary.csv
+
+
+
+"""

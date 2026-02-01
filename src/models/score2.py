@@ -2,6 +2,9 @@ import os
 import numpy as np
 import pandas as pd
 
+"""
+排名加和法
+"""
 
 def _week_judge_cols(week: int) -> list[str]:
     return [

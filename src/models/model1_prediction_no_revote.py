@@ -2,37 +2,20 @@ import numpy as np
 import pandas as pd
 import pymc as pm
 
-# ==========================================
-# 0. 赛制判断函数
-# ==========================================
+
 def get_scoring_system(season):
-    """
-    🆕 NEW
-    根据赛季返回赛制类型
-    """
     if season <= 2 or season >= 28:
         return "rank"
     return "percent"
 
-# ==========================================
-# 1. Base Layer：可行解空间约束
-# ==========================================
 
 class RankPhysicalConstraintModel:
-    """
-    ⚠️ MODIFIED
-    排名赛制下的 Base Layer
-    利用已知淘汰者，缩小粉丝排名的可行解空间
-    """
     def __init__(self, judge_ranks, eliminated_idx=None):
         self.judge_ranks = np.asarray(judge_ranks)
         self.eliminated_idx = eliminated_idx
         self.n = len(judge_ranks)
 
     def get_feasible_fan_rank_prior(self):
-        """
-        返回一个满足约束条件的 Fan Rank 期望分布
-        """
         if self.eliminated_idx is None:
             return np.ones(self.n) / (self.n if self.n > 0 else 1.0)
 
@@ -69,32 +52,14 @@ class RankPhysicalConstraintModel:
         v_base[e] = 0.3
         return v_base / float(np.sum(v_base))
 
-        """
-        基本功能解释
-        为每个人随机生成一个“粉丝潜在强度”
-        将潜在粉丝强度转化为粉丝排名
-
-        解释反例：如果某人评委排名很差却没被淘汰，那么要让淘汰者依然是e，
-        筛选条件会迫使很多可行样本里
-        该人 fan_ranks 更靠前即粉丝更强来抵消评委劣势
-        使得v_base偏高，解释物理机制反推粉丝票很高
-        """
-
 
 class PercentPhysicalConstraintModel:
-    """
-    ⚠️ MODIFIED
-    百分赛制下的 Base Layer
-    """
     def __init__(self, judge_percent, eliminated_idx=None):
         self.judge_percent = np.asarray(judge_percent)
         self.eliminated_idx = eliminated_idx
         self.n = len(judge_percent)
 
     def get_feasible_fan_percent_prior(self):
-        """
-        返回一个满足不等式约束的粉丝百分比先验
-        """
         if self.eliminated_idx is None:
             return np.ones(self.n) / (self.n if self.n > 0 else 1.0)
 
@@ -134,44 +99,20 @@ class PercentPhysicalConstraintModel:
         return v_base / float(np.sum(v_base))
 
 
-        """
-        总之利用赛制规则将粉丝票可行空间筛选出来
-        """
-
-
-# ==========================================
-# 2. 贝叶斯残差扰动层 (Residual Layer - Model B)
-# ==========================================
 def build_bayesian_residual_model(industry_idx, age_data, fan_base_data):
-    """
-    构建贝叶斯网络：Industry/Age -> Preference/Volatility -> Score_Residual
-    """
     with pm.Model() as residual_model:
-        """Pymc定义随机变量来表达行业年龄对粉丝偏好或者残差的影响
-        这里是将每一个行业类别给一个行业效应参数
-        后面便将每个选手映射到自己所属行业的效应上
-        //待完善
-        """
-        
         industry_effect = pm.Normal(
             "Industry_Effect",
             mu=0,
             sigma=1,
             shape=len(np.unique(industry_idx)),
         )
-        """
-        形成每个选手因年龄带来的偏移
-        """
         age_slope = pm.Normal("Age_Slope", mu=0, sigma=1)
         pref_mu = industry_effect[industry_idx] + age_slope * age_data
         pm.Normal("Delta_V", mu=pref_mu, sigma=0.5, shape=len(age_data))
-        """行业年龄会体现在每个人的均值残差上"""
         return residual_model
 
 
-# ==========================================
-# 3. 融合层
-# ==========================================
 class ResidualCalibrationEnsemble:
     def __init__(self, alpha=0.5):
         self.alpha = alpha
@@ -181,52 +122,38 @@ class ResidualCalibrationEnsemble:
         return exp_x / exp_x.sum()
 
     def fuse_rank(self, v_base, delta_v):
-        """
-        ⚠️ MODIFIED
-        排名赛制融合：v_base + αΔV → fan ranking score
-        """
         raw = v_base + self.alpha * delta_v
         return self.softmax(raw)
 
     def fuse_percent(self, v_base, delta_v):
-        """
-        ⚠️ MODIFIED
-        百分赛制融合
-        """
         raw = v_base + self.alpha * delta_v
         return self.softmax(raw)
 
     def adaptive_weight_logic(self, solution_space_entropy):
-        """
-        根据解空间熵动态调整 alpha
-        """
         self.alpha = 1.0 / (1.0 + np.exp(-solution_space_entropy))
         return self.alpha
 
 
-# ==========================================
-# 4. Season ≥28：Bottom-2 Judge Revote
-# ==========================================
-def judge_revote_bottom_two(bottom2_indices, judge_scores_bottom2):
-    """
-    🆕 NEW
-    Season ≥ 28 的评委复活投票机制
-    """
-    votes = np.zeros(2)
-    for scores in judge_scores_bottom2:
-        if scores[0] > scores[1]:
-            votes[0] += 1
-        elif scores[1] > scores[0]:
-            votes[1] += 1
-    if votes[0] == votes[1]:
-        return None  # 平票，不淘汰
-    loser = np.argmin(votes)
-    return bottom2_indices[loser]
+DEFAULT_SEASONS = [2, 4, 11, 27, 28, 29, 34]
+DEFAULT_MAX_WEEKS = 7
 
 
-# ==========================================
-# 5. 主逻辑示例
-# ==========================================
+def _parse_seasons_env(value: str | None) -> list[int] | None:
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    parts = [p.strip() for p in raw.replace(";", ",").split(",") if p.strip()]
+    out = []
+    for p in parts:
+        try:
+            out.append(int(p))
+        except Exception:
+            continue
+    return sorted(set(out)) if out else None
+
+
 if __name__ == "__main__":
     import os
     from pathlib import Path
@@ -235,15 +162,15 @@ if __name__ == "__main__":
         os.environ.get("MCM_PROJECT_ROOT", str(Path(__file__).resolve().parents[2]))
     ).resolve()
 
-    DATA_PATH = str(project_root / "data" / "processed" / "processed_mcm_wide_clean.csv")
-    OUT_PATH = str(
-        project_root / "data" / "processed" / "model1_fan_vote_predictions_enriched.csv"
+    data_path = str(project_root / "data" / "processed" / "processed_mcm_wide_clean.csv")
+    out_path = str(
+        project_root / "data" / "processed" / "model1_fan_vote_predictions_no_revote.csv"
     )
 
-    MAX_WEEKS = 11
-    DRAWS = 200
-    TUNE = 200
-    CHAINS = 1
+    max_weeks = int(os.environ.get("MCM_MAX_WEEKS", str(DEFAULT_MAX_WEEKS)))
+    draws = int(os.environ.get("MCM_DRAWS", "200"))
+    tune = int(os.environ.get("MCM_TUNE", "200"))
+    chains = int(os.environ.get("MCM_CHAINS", "1"))
 
     def _week_judge_cols(week):
         return [
@@ -257,10 +184,10 @@ if __name__ == "__main__":
         values = np.asarray(values)
         return np.argsort(np.argsort(-values)) + 1
 
-    if not os.path.exists(DATA_PATH):
-        raise FileNotFoundError(f"Data file not found: {DATA_PATH}")
+    if not os.path.exists(data_path):
+        raise FileNotFoundError(f"Data file not found: {data_path}")
 
-    df = pd.read_csv(DATA_PATH, encoding="utf-8-sig")
+    df = pd.read_csv(data_path, encoding="utf-8-sig")
     required_cols = {
         "season",
         "celebrity_name",
@@ -281,6 +208,10 @@ if __name__ == "__main__":
         .tolist()
     )
     seasons = sorted(seasons)
+    seasons_filter = _parse_seasons_env(os.environ.get("MCM_SEASONS"))
+    if seasons_filter is None:
+        seasons_filter = DEFAULT_SEASONS
+    seasons = [s for s in seasons if int(s) in set(seasons_filter)]
 
     all_preds = []
 
@@ -290,7 +221,7 @@ if __name__ == "__main__":
 
         print(f"Season={season}, Type={season_type}")
 
-        for week in range(1, MAX_WEEKS + 1):
+        for week in range(1, max_weeks + 1):
             judge_cols = [c for c in _week_judge_cols(week) if c in season_df.columns]
             if not judge_cols:
                 continue
@@ -357,9 +288,9 @@ if __name__ == "__main__":
             res_model = build_bayesian_residual_model(ind, age_z, v_base)
             with res_model:
                 trace = pm.sample(
-                    DRAWS,
-                    tune=TUNE,
-                    chains=CHAINS,
+                    draws,
+                    tune=tune,
+                    chains=chains,
                     target_accept=0.9,
                     return_inferencedata=True,
                     progressbar=False,
@@ -393,20 +324,6 @@ if __name__ == "__main__":
                     score_cols[key] = np.zeros(len(week_df))
 
             eliminated_pred_idx = int(np.argmin(fan_vote_percent))
-            if season_type == "rank" and season >= 28 and len(names) >= 2:
-                bottom2_indices = np.argsort(fan_vote_percent)[:2].tolist()
-                judge_scores_bottom2 = []
-                for col in judge_cols:
-                    judge_scores_bottom2.append(
-                        week_df.loc[bottom2_indices, col].to_numpy()
-                    )
-                judge_scores_bottom2 = np.asarray(judge_scores_bottom2)
-
-                revote_elim = judge_revote_bottom_two(
-                    bottom2_indices, judge_scores_bottom2
-                )
-                if revote_elim is not None:
-                    eliminated_pred_idx = int(revote_elim)
 
             predicted_elim_mask = np.zeros(len(week_df), dtype=int)
             predicted_elim_mask[eliminated_pred_idx] = 1
@@ -438,7 +355,7 @@ if __name__ == "__main__":
                 )
                 print(result_df.sort_values("Fan_Vote_Percent", ascending=True).head(5))
 
-    os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
     if all_preds:
         out_df = pd.concat(all_preds, ignore_index=True)
@@ -455,5 +372,5 @@ if __name__ == "__main__":
             ]
         )
 
-    out_df.to_csv(OUT_PATH, index=False, encoding="utf-8-sig")
-    print(f"Saved predictions: {OUT_PATH} (rows={len(out_df)})")
+    out_df.to_csv(out_path, index=False, encoding="utf-8-sig")
+    print(f"Saved predictions: {out_path} (rows={len(out_df)})")
