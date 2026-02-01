@@ -1,5 +1,6 @@
 import os
 import sys
+import shutil
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -144,7 +145,8 @@ def plot_boundary_fidelity_parallel_by_system(df_results: pd.DataFrame, output_p
     fig, axes = plt.subplots(nrows=2, ncols=1, figsize=(12.5, 9.0), dpi=170, sharex=True, sharey=True)
 
     panels = [("rank", "Rank System (Season ≤ 2 or ≥ 28)"), ("percent", "Percent System (Else)")]
-    colors = ("#E76F51", "#2A9D8F", "#264653")
+    # Colors mimicking the network graph: Eliminated (Teal), Safe (Light Blue), Winner (Dark Blue)
+    colors = ("#649b92", "#b3cde3", "#2b6a99")
 
     for ax, (stype, title) in zip(axes, panels):
         sub = df_results[df_results["SeasonType"] == stype].copy()
@@ -153,6 +155,8 @@ def plot_boundary_fidelity_parallel_by_system(df_results: pd.DataFrame, output_p
             continue
 
         df_plot = sub[["JudgeRank", "PredictedRank", "Status"]].copy()
+        # Reduce data to 1/4
+        df_plot = df_plot.sample(frac=0.25, random_state=42)
         df_plot = df_plot.rename(columns={"Status": "EliminatedStatus"})
 
         parallel_coordinates(
@@ -182,7 +186,7 @@ def main():
     raw_path = os.path.join(project_root, "data", "raw", "2026_MCM_Problem_C_Data.csv")
     pred_path = os.path.join(project_root, "data", "processed", "model1_fan_vote_predictions.csv")
     pred_path_fallback = os.path.join(project_root, "results", "model1_fan_vote_predictions_subset.csv")
-    out_dir = os.path.join(project_root, "scripts", "visualization", "outputs")
+    out_dir = os.path.join(project_root, "scripts", "visualization", "outputs", "Q1related")
 
     df_wide = _ensure_processed_wide(processed_path=processed_path, raw_path=raw_path)
     if os.path.exists(pred_path):
@@ -198,8 +202,19 @@ def main():
     df_table = build_boundary_fidelity_table(df_wide, df_pred)
     df_table.to_csv(os.path.join(out_dir, "boundary_fidelity_table.csv"), index=False, encoding="utf-8-sig")
     out_path = os.path.join(out_dir, "boundary_fidelity_parallel_by_system.png")
+    print(f"Generating plot to: {out_path}")
     plot_boundary_fidelity_parallel_by_system(df_table, out_path)
+    if not os.path.exists(out_path):
+        print(f"Error: File was not created at {out_path}")
+        return
     print(f"Saved: {out_path} (rows={len(df_table)})")
+
+    # Copy to charts directory
+    charts_dir = os.path.join(project_root, "charts")
+    os.makedirs(charts_dir, exist_ok=True)
+    chart_dest = os.path.join(charts_dir, "boundary_fidelity_parallel_by_system.png")
+    shutil.copy(out_path, chart_dest)
+    print(f"Copied to: {chart_dest}")
 
 
 if __name__ == "__main__":

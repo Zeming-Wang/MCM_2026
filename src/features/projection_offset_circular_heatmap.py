@@ -218,30 +218,30 @@ def _plot_circular_cluster_heatmap(
             rotation_mode="anchor",
             ha=ha,
             va="center",
-            fontsize=5.6,
+            fontsize=11.2,
             color="#222222",
         )
 
-    ax.add_patch(
-        Circle(
-            (0.0, 0.0),
-            radius=r_center_outline,
-            facecolor="none",
-            edgecolor="#B5B5B5",
-            linewidth=1.0,
-            alpha=0.65,
-        )
-    )
-    ax.add_patch(
-        Circle(
-            (0.0, 0.0),
-            radius=r_dend_outer,
-            facecolor="none",
-            edgecolor="#D0D0D0",
-            linewidth=0.9,
-            alpha=0.55,
-        )
-    )
+    # ax.add_patch(
+    #     Circle(
+    #         (0.0, 0.0),
+    #         radius=r_center_outline,
+    #         facecolor="none",
+    #         edgecolor="#B5B5B5",
+    #         linewidth=1.0,
+    #         alpha=0.65,
+    #     )
+    # )
+    # ax.add_patch(
+    #     Circle(
+    #         (0.0, 0.0),
+    #         radius=r_dend_outer,
+    #         facecolor="none",
+    #         edgecolor="#D0D0D0",
+    #         linewidth=0.9,
+    #         alpha=0.55,
+    #     )
+    # )
 
     cax = fig.add_axes([0.47, 0.43, 0.022, 0.16])
     sm = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
@@ -252,25 +252,25 @@ def _plot_circular_cluster_heatmap(
     cb.ax.tick_params(labelsize=9)
     cb.outline.set_linewidth(0.8)
 
-    legend_text = "\n".join(
-        [
-            "Weighted mode",
-            "Simple mode",
-            "Inverse variance weighted",
-            "Weighted median",
-            "MR Egger",
-        ]
-    )
-    fig.text(
-        0.73,
-        0.70,
-        legend_text,
-        rotation=-35,
-        ha="left",
-        va="top",
-        fontsize=10,
-        color="#333333",
-    )
+    # legend_text = "\n".join(
+    #     [
+    #         "Weighted mode",
+    #         "Simple mode",
+    #         "Inverse variance weighted",
+    #         "Weighted median",
+    #         "MR Egger",
+    #     ]
+    # )
+    # fig.text(
+    #     0.73,
+    #     0.70,
+    #     legend_text,
+    #     rotation=-35,
+    #     ha="left",
+    #     va="top",
+    #     fontsize=10,
+    #     color="#333333",
+    # )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, bbox_inches="tight")
